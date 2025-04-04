@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { checkLink, checkMultipleLinks } from '../utils/linkUtils';
 
 const DataContext = createContext();
 
@@ -24,11 +25,17 @@ export const DataProvider = ({ children }) => {
   const [filters, setFilters] = useState({
     category: '',
     status: '',
-    searchTerm: ''
+    searchTerm: '',
+    linkStatus: '',
+    type: '' // Novo filtro para tipo de item (ex: 'checklist_afiliados')
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
+  
+  // Estados específicos para a verificação de links
+  const [isCheckingLinks, setIsCheckingLinks] = useState(false);
+  const [checkProgress, setCheckProgress] = useState({ completed: 0, total: 0 });
 
   // Salvar dados no localStorage quando items mudar
   useEffect(() => {
@@ -49,11 +56,41 @@ export const DataProvider = ({ children }) => {
     const emAndamento = items.filter(item => item.status === 'em_andamento').length;
     const pendentes = items.filter(item => item.status === 'pendente').length;
     
+    // Estatísticas de links
+    const linksChecked = items.filter(item => item.lastChecked).length;
+    const linksActive = items.filter(item => item.linkStatus === 'active').length;
+    const linksInactive = items.filter(item => item.linkStatus === 'inactive' || item.linkStatus === 'timeout').length;
+    const linksInvalid = items.filter(item => item.linkStatus === 'invalid').length;
+    
+    // Estatísticas de checklists
+    const checklistsAtivos = items.filter(item => item.type === 'checklist_afiliados').length;
+    const checklistsConcluidos = items.filter(item => {
+      if (item.type !== 'checklist_afiliados' || !item.checklistData) return false;
+      
+      // Verificar se todas as etapas estão concluídas
+      let totalEtapas = 0;
+      let etapasConcluidas = 0;
+      
+      Object.values(item.checklistData).forEach(parte => {
+        if (!Array.isArray(parte)) return;
+        totalEtapas += parte.length;
+        etapasConcluidas += parte.filter(etapa => etapa.completed).length;
+      });
+      
+      return totalEtapas > 0 && etapasConcluidas === totalEtapas;
+    }).length;
+    
     return {
       total,
       completos,
       emAndamento,
-      pendentes
+      pendentes,
+      linksChecked,
+      linksActive,
+      linksInactive,
+      linksInvalid,
+      checklistsAtivos,
+      checklistsConcluidos
     };
   };
 
@@ -72,12 +109,20 @@ export const DataProvider = ({ children }) => {
       result = result.filter(item => item.status === filters.status);
     }
     
+    if (filters.linkStatus) {
+      result = result.filter(item => item.linkStatus === filters.linkStatus);
+    }
+    
+    if (filters.type) {
+      result = result.filter(item => item.type === filters.type);
+    }
+    
     if (filters.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase();
       result = result.filter(item => 
-        item.title.toLowerCase().includes(searchLower) || 
-        item.description.toLowerCase().includes(searchLower) ||
-        item.link.toLowerCase().includes(searchLower)
+        (item.title && item.title.toLowerCase().includes(searchLower)) || 
+        (item.description && item.description.toLowerCase().includes(searchLower)) ||
+        (item.link && item.link.toLowerCase().includes(searchLower))
       );
     }
     
@@ -127,6 +172,72 @@ export const DataProvider = ({ children }) => {
     setFilters(prev => ({ ...prev, ...newFilters }));
   };
 
+  // Função para verificar um único link
+  const checkSingleLink = async (id) => {
+    const item = items.find(item => item.id === id);
+    if (!item) return;
+    
+    const result = await checkLink(item.link);
+    
+    updateItem(id, {
+      linkStatus: result.status,
+      linkMessage: result.message,
+      lastChecked: new Date().toISOString()
+    });
+  };
+
+  // Função para verificar todos os links
+  const checkAllLinks = async () => {
+    if (items.length === 0) return;
+    
+    setIsCheckingLinks(true);
+    setCheckProgress({ completed: 0, total: items.length });
+    
+    try {
+      // Callback para atualizar o progresso
+      const progressCallback = (completed, total, updatedItems) => {
+        setCheckProgress({ completed, total });
+        setItems(updatedItems);
+      };
+      
+      // Verifica todos os links
+      const updatedItems = await checkMultipleLinks(items, progressCallback);
+      setItems(updatedItems);
+    } catch (error) {
+      setError(`Erro ao verificar links: ${error.message}`);
+    } finally {
+      setIsCheckingLinks(false);
+    }
+  };
+  
+  // Funções específicas para checklist de afiliados
+  
+  // Atualiza o status de uma etapa específica
+  const updateChecklistEtapa = (checklistId, parte, etapaId, completed) => {
+    const checklist = items.find(item => item.id === checklistId);
+    if (!checklist || checklist.type !== 'checklist_afiliados') return;
+    
+    const updatedChecklistData = { ...checklist.checklistData };
+    if (!updatedChecklistData[parte]) return;
+    
+    const etapaIndex = updatedChecklistData[parte].findIndex(e => e.id === etapaId);
+    if (etapaIndex < 0) return;
+    
+    updatedChecklistData[parte][etapaIndex].completed = completed;
+    
+    updateItem(checklistId, {
+      ...checklist,
+      checklistData: updatedChecklistData
+    });
+  };
+  
+  // Obtém dados do checklist para uma data específica
+  const getChecklistByDate = (date) => {
+    return items.find(item => 
+      item.type === 'checklist_afiliados' && item.checklistDate === date
+    );
+  };
+
   // Valores e funções expostos pelo contexto
   const value = {
     items,
@@ -145,7 +256,15 @@ export const DataProvider = ({ children }) => {
     removeItem,
     importItems,
     clearAllData,
-    updateFilters
+    updateFilters,
+    // Funções de verificação de links
+    checkSingleLink,
+    checkAllLinks,
+    isCheckingLinks,
+    checkProgress,
+    // Funções específicas para checklist
+    updateChecklistEtapa,
+    getChecklistByDate
   };
 
   return (
