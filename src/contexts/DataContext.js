@@ -26,8 +26,7 @@ export const DataProvider = ({ children }) => {
     category: '',
     status: '',
     searchTerm: '',
-    linkStatus: '',
-    type: '' // Novo filtro para tipo de item (ex: 'checklist_afiliados')
+    linkStatus: '' // Novo filtro para status dos links
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -62,24 +61,6 @@ export const DataProvider = ({ children }) => {
     const linksInactive = items.filter(item => item.linkStatus === 'inactive' || item.linkStatus === 'timeout').length;
     const linksInvalid = items.filter(item => item.linkStatus === 'invalid').length;
     
-    // Estatísticas de checklists
-    const checklistsAtivos = items.filter(item => item.type === 'checklist_afiliados').length;
-    const checklistsConcluidos = items.filter(item => {
-      if (item.type !== 'checklist_afiliados' || !item.checklistData) return false;
-      
-      // Verificar se todas as etapas estão concluídas
-      let totalEtapas = 0;
-      let etapasConcluidas = 0;
-      
-      Object.values(item.checklistData).forEach(parte => {
-        if (!Array.isArray(parte)) return;
-        totalEtapas += parte.length;
-        etapasConcluidas += parte.filter(etapa => etapa.completed).length;
-      });
-      
-      return totalEtapas > 0 && etapasConcluidas === totalEtapas;
-    }).length;
-    
     return {
       total,
       completos,
@@ -88,9 +69,7 @@ export const DataProvider = ({ children }) => {
       linksChecked,
       linksActive,
       linksInactive,
-      linksInvalid,
-      checklistsAtivos,
-      checklistsConcluidos
+      linksInvalid
     };
   };
 
@@ -113,16 +92,12 @@ export const DataProvider = ({ children }) => {
       result = result.filter(item => item.linkStatus === filters.linkStatus);
     }
     
-    if (filters.type) {
-      result = result.filter(item => item.type === filters.type);
-    }
-    
     if (filters.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase();
       result = result.filter(item => 
-        (item.title && item.title.toLowerCase().includes(searchLower)) || 
-        (item.description && item.description.toLowerCase().includes(searchLower)) ||
-        (item.link && item.link.toLowerCase().includes(searchLower))
+        item.title.toLowerCase().includes(searchLower) || 
+        item.description.toLowerCase().includes(searchLower) ||
+        item.link.toLowerCase().includes(searchLower)
       );
     }
     
@@ -209,34 +184,6 @@ export const DataProvider = ({ children }) => {
       setIsCheckingLinks(false);
     }
   };
-  
-  // Funções específicas para checklist de afiliados
-  
-  // Atualiza o status de uma etapa específica
-  const updateChecklistEtapa = (checklistId, parte, etapaId, completed) => {
-    const checklist = items.find(item => item.id === checklistId);
-    if (!checklist || checklist.type !== 'checklist_afiliados') return;
-    
-    const updatedChecklistData = { ...checklist.checklistData };
-    if (!updatedChecklistData[parte]) return;
-    
-    const etapaIndex = updatedChecklistData[parte].findIndex(e => e.id === etapaId);
-    if (etapaIndex < 0) return;
-    
-    updatedChecklistData[parte][etapaIndex].completed = completed;
-    
-    updateItem(checklistId, {
-      ...checklist,
-      checklistData: updatedChecklistData
-    });
-  };
-  
-  // Obtém dados do checklist para uma data específica
-  const getChecklistByDate = (date) => {
-    return items.find(item => 
-      item.type === 'checklist_afiliados' && item.checklistDate === date
-    );
-  };
 
   // Valores e funções expostos pelo contexto
   const value = {
@@ -261,10 +208,7 @@ export const DataProvider = ({ children }) => {
     checkSingleLink,
     checkAllLinks,
     isCheckingLinks,
-    checkProgress,
-    // Funções específicas para checklist
-    updateChecklistEtapa,
-    getChecklistByDate
+    checkProgress
   };
 
   return (

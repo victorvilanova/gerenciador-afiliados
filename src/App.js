@@ -7,7 +7,6 @@ import FilterBar from './components/FilterBar';
 import ItemForm from './components/ItemForm';
 import ItemList from './components/ItemList';
 import LinkChecker from './components/LinkChecker';
-import ChecklistAfiliados from './components/ChecklistAfiliados';
 
 function App() {
   return (
@@ -17,7 +16,6 @@ function App() {
         
         <main className="container mx-auto px-4 py-6">
           <Dashboard />
-          <ChecklistAfiliados />
           <FileUploader />
           <LinkChecker />
           <FilterBar />
